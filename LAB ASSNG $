@@ -1,0 +1,70 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
+from pgmpy.models import BayesianNetwork
+from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.inference import VariableElimination
+
+# Step 1: Load the Dataset (replace with your data source)
+url = "https://raw.githubusercontent.com/juanArias8/machine-learning-uci-thyroid-disease/master/dataset.csv"
+column_names = ['T3', 'T4', 'TSH', 'Goiter', 'Class']
+data = pd.read_csv(url, header=None, names=column_names, na_values='?')
+
+# Option 1a: Reduce data size (Consider random sampling or stratified sampling)
+# Uncomment the line below if you want to reduce data size
+# data = data.sample(n=1000, random_state=42)  # Example: Sample 1000 rows
+
+# Option 1b: Feature selection (Consider feature importance techniques)
+# Uncomment the following block if you want to perform feature selection
+# from sklearn.feature_selection import SelectKBest, chi2
+# X_train, X_test, y_train, y_test = train_test_split(data.drop('Class', axis=1), data['Class'], test_size=0.2, random_state=42)
+# selector = SelectKBest(chi2, k=3)  # Select top 3 features based on chi-square test
+# X_train = selector.fit_transform(X_train, y_train)
+# X_test = selector.transform(X_test)
+
+# Option 2: Close unused applications or increase RAM (if feasible)
+
+# Step 2: Encode Categorical Variables
+le_goiter = LabelEncoder()
+le_class = LabelEncoder()
+data['Goiter'] = le_goiter.fit_transform(data['Goiter'])
+data['Class'] = le_class.fit_transform(data['Class'])
+
+# Step 3: Feature Selection and Splitting
+X = data[['T3', 'T4', 'TSH', 'Goiter']]
+y = data['Class']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Combine features and labels for structure learning
+train_data = pd.concat([X_train, y_train], axis=1)
+
+# Step 4: Manually Define Bayesian Network Structure
+# Ensure T3, T4, TSH, and Goiter are included as features affecting the Class label
+model = BayesianNetwork([('T3', 'Class'),
+                          ('T4', 'Class'),
+                          ('TSH', 'Class'),
+                          ('Goiter', 'Class')])
+
+# Step 5: Fit the Bayesian Network with MLE estimator
+model.fit(model, train_data, estimator=MaximumLikelihoodEstimator(model , train_data))
+
+# Print the nodes and edges of the model to verify
+print("Nodes in the model:", model.nodes())
+print("Edges in the model:", model.edges())
+
+# Step 6: Make Predictions
+inference = VariableElimination(model)
+y_pred = []
+
+for index, row in X_test.iterrows():
+    evidence = row.to_dict()
+    try:
+        query = inference.map_query(variables=['Class'], evidence=evidence)
+        y_pred.append(le_class.transform([query['Class']])[0])
+    except ValueError as e:
+        print(f"Error with evidence {evidence}: {e}")
+
+# Step 7: Calculate Accuracy
+accuracy = accuracy_score(y_test, y_pred)
+print(f'Accuracy: {accuracy * 100:.2f}%')
